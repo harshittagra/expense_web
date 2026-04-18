@@ -1445,20 +1445,21 @@ firebase.initializeApp(firebaseConfig);
 _db=firebase.firestore();
 const _auth=firebase.auth();
 const _provider=new firebase.auth.GoogleAuthProvider();
-const _isMobile=/Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
 
-function doSignIn(){
-  if(_isMobile){
-    _auth.signInWithRedirect(_provider);
-  }else{
-    _auth.signInWithPopup(_provider).catch(e=>{
-      // If popup blocked, fall back to redirect
-      if(e.code==='auth/popup-blocked'||e.code==='auth/popup-closed-by-user'){
-        _auth.signInWithRedirect(_provider);
-      }else{
-        toast('Sign-in failed: '+e.message,'error');
-      }
-    });
+// Use signInWithPopup always — works on modern mobile browsers
+// If popup is blocked, automatically fall back to redirect
+async function doSignIn(){
+  try{
+    await _auth.signInWithPopup(_provider);
+  }catch(e){
+    console.error('Auth error:',e);
+    if(e.code==='auth/popup-blocked'||e.code==='auth/popup-closed-by-user'||e.code==='auth/cancelled-popup-request'){
+      // Popup was blocked — use redirect instead
+      toast('Redirecting to Google...','warning');
+      _auth.signInWithRedirect(_provider);
+    }else{
+      toast('Sign-in failed: '+(e.message||e.code),'error');
+    }
   }
 }
 
@@ -1481,9 +1482,16 @@ function renderAuthUI(){
   }
 }
 
-// Handle redirect result (for mobile sign-in)
-_auth.getRedirectResult().catch(e=>{
-  if(e.code&&e.code!=='auth/no-auth-event')toast('Sign-in failed: '+e.message,'error');
+// Handle redirect result first (for cases where redirect was used)
+_auth.getRedirectResult().then(result=>{
+  if(result&&result.user){
+    console.log('Redirect sign-in successful:',result.user.email);
+  }
+}).catch(e=>{
+  if(e.code&&e.code!=='auth/no-auth-event'){
+    console.error('Redirect error:',e);
+    toast('Sign-in error: '+(e.message||e.code),'error');
+  }
 });
 
 _auth.onAuthStateChanged(async user=>{
