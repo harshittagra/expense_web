@@ -1445,6 +1445,22 @@ firebase.initializeApp(firebaseConfig);
 _db=firebase.firestore();
 const _auth=firebase.auth();
 const _provider=new firebase.auth.GoogleAuthProvider();
+const _isMobile=/Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
+
+function doSignIn(){
+  if(_isMobile){
+    _auth.signInWithRedirect(_provider);
+  }else{
+    _auth.signInWithPopup(_provider).catch(e=>{
+      // If popup blocked, fall back to redirect
+      if(e.code==='auth/popup-blocked'||e.code==='auth/popup-closed-by-user'){
+        _auth.signInWithRedirect(_provider);
+      }else{
+        toast('Sign-in failed: '+e.message,'error');
+      }
+    });
+  }
+}
 
 function renderAuthUI(){
   const area=document.getElementById('auth-area');
@@ -1461,15 +1477,19 @@ function renderAuthUI(){
     area.innerHTML=`<button class="auth-btn" id="btn-login" title="Sign in with Google to sync across devices">
       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G"> Sign In
     </button>`;
-    document.getElementById('btn-login').onclick=()=>_auth.signInWithPopup(_provider).catch(e=>toast('Sign-in failed: '+e.message,'error'));
+    document.getElementById('btn-login').onclick=doSignIn;
   }
 }
+
+// Handle redirect result (for mobile sign-in)
+_auth.getRedirectResult().catch(e=>{
+  if(e.code&&e.code!=='auth/no-auth-event')toast('Sign-in failed: '+e.message,'error');
+});
 
 _auth.onAuthStateChanged(async user=>{
   _fbUser=user;
   renderAuthUI();
   if(user){
-    // Try loading cloud data
     const hasCloud=await loadFromFirestore();
     if(hasCloud){
       document.documentElement.setAttribute('data-theme',S.theme);
@@ -1478,18 +1498,16 @@ _auth.onAuthStateChanged(async user=>{
       renderAll();
       toast(`Welcome back, ${user.displayName||user.email}! ☁️ Data synced.`);
     }else{
-      // First time sign-in — push local data to cloud
       await saveToFirestore();
       toast(`Signed in as ${user.displayName||user.email}! ☁️ Data backed up.`);
     }
   }else{
-    // Signed out — stay with local data
     renderAll();
   }
 });
 
-// Initial login button wiring (before auth state fires)
-document.getElementById('btn-login').onclick=()=>_auth.signInWithPopup(_provider).catch(e=>toast('Sign-in failed: '+e.message,'error'));
+// Initial login button wiring
+document.getElementById('btn-login').onclick=doSignIn;
 
 // ===== INIT =====
 load();
